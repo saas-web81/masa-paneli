@@ -49,8 +49,11 @@ svg{display:block;}
 .etiket{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--tq);}
 .soluk{color:var(--soluk);}
 
-#app{position:fixed;top:0;left:0;right:0;bottom:0;display:grid;grid-template-columns:100%;grid-template-rows:auto 1fr auto auto auto;grid-row-gap:10px;padding:14px 26px 10px;}
-#app > *{min-width:0;}
+/* iOS 12 Safari'de grid + top/bottom düzeni alt yarıyı boş bırakıyordu; yüksekliği açık bir flex sütunu kullanılıyor */
+#app{position:fixed;top:0;left:0;width:100%;height:100%;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;padding:14px 26px 10px;}
+#app > *{min-width:0;-webkit-flex:none;flex:none;}
+#app > #hero{-webkit-flex:1 1 0px;flex:1 1 0px;min-height:0;margin-top:10px;}
+#app > #altyazi.var, #app > #alt, #app > #serit{margin-top:10px;}
 
 /* Üst şerit */
 #ust{display:flex;justify-content:space-between;align-items:flex-start;}
@@ -331,6 +334,7 @@ body.tamEkran #tarih{padding-left:140px;}
     <div class="satir"><button id="kanalRastgeleBtn">Rastgele oluştur</button><button id="kanalKopyalaBtn">Kopyala</button></div>
     <div id="kanalDurum" class="kucuk soluk"></div>
     <div class="satir"><button id="sesTestBtn">Ses testi</button><button id="ayarKaydetBtn" class="ana">Kaydet</button></div>
+    <p class="kucuk soluk" id="surumYazi"></p>
     <p class="kucuk soluk">Anahtar yalnızca bu iPad'deki Safari'de saklanır, sayfanın koduna yazılmaz. Web araması için Claude Console'da web search açık olmalı. Bilgileri hızlı model yazar ve nadiren hatalı olabilir; kapalıyken ya da internet yokken paneldeki yedek liste kullanılır. Siri kanalı ntfy.sh üzerinden çalışır: adı bilen herkes okuyabilir, o yüzden tahmin edilemez bir ad kullan.</p>
   </div>
 </div>
@@ -461,6 +465,7 @@ body.tamEkran #tarih{padding-left:140px;}
   };
   /* ============================================================== */
 
+  var SURUM = '1 Kasım 12:20';   // Ayarlar penceresinin altında görünür
   var API_URL = 'https://api.anthropic.com/v1/messages';
   var AYLAR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
   var GUNLER = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
@@ -1258,12 +1263,12 @@ body.tamEkran #tarih{padding-left:140px;}
     $('muzikAc').addEventListener('click', function () { window.location.href = 'music://'; });
 
     var kok = document.documentElement;
-    var tamEkran = kok.requestFullscreen || kok.webkitRequestFullscreen;
+    var tamEkran = kok.requestFullscreen || kok.webkitRequestFullscreen || kok.webkitRequestFullScreen;
     if (!tamEkran) $('tamEkranBtn').style.display = 'none';
     else $('tamEkranBtn').addEventListener('click', function () {
-      var ac = document.fullscreenElement || document.webkitFullscreenElement;
+      var ac = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement;
       try {
-        if (ac) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        if (ac) (document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen).call(document);
         else tamEkran.call(kok);
       } catch (e) { hataYaz('Tam ekran desteklenmiyor'); }
     });
@@ -1292,7 +1297,7 @@ body.tamEkran #tarih{padding-left:140px;}
   // iOS 12 Safari tam ekrana geçince ya da klavye kapanınca düzeni eski yükseklikte bırakabiliyor:
   // panel yüksekliğini her seferinde ekranın gerçek yüksekliğine eşitle
   function boyutAyarla() {
-    var tam = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    var tam = !!(document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement || document.webkitIsFullScreen);
     document.body.classList.toggle('tamEkran', tam);
     var h = window.innerHeight;
     if (tam && window.screen) {
@@ -1308,6 +1313,7 @@ body.tamEkran #tarih{padding-left:140px;}
   $('altyaziEtiket').textContent = CONFIG.asistanAdi;
   $('sorBaslik').textContent = CONFIG.asistanAdi;
   $('sorBtnYazi').textContent = CONFIG.soruDugmesi;
+  $('surumYazi').textContent = 'Panel sürümü: ' + SURUM;
   bagla();
   boyutAyarla();
   alarmKartCiz();
