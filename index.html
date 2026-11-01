@@ -181,6 +181,8 @@ svg{display:block;}
 label{display:block;font-size:14px;color:var(--soluk);margin:12px 0 6px;}
 label.onay{display:flex;align-items:center;font-size:16px;color:var(--yazi);}
 label.onay input{width:24px;height:24px;margin:0 10px 0 0;}
+input[type=range]{width:100%;margin:4px 0;}
+#sesNot{color:var(--soluk);}
 input[type=text],input[type=password],input[type=time],select{font:inherit;font-size:18px;color:var(--yazi);background:rgba(0,0,0,.45);border:1px solid var(--cizgi);border-radius:12px;padding:12px;width:100%;-webkit-appearance:none;-webkit-user-select:text;user-select:text;}
 .satir{display:flex;margin-top:14px;}
 .satir button{flex:1;margin-right:10px;}
@@ -327,6 +329,13 @@ body.tamEkran #tarih{padding-left:140px;}
       <option value="claude-sonnet-5-5">Claude Sonnet 5.5 · dengeli</option>
       <option value="claude-haiku-5-5">Claude Haiku 5.5 · en hızlı</option>
     </select>
+    <label for="sesSec">Ses</label>
+    <select id="sesSec"></select>
+    <div id="sesNot" class="kucuk" style="margin-top:6px"></div>
+    <label for="incelikSec">Ses inceliği <span id="incelikDeger"></span></label>
+    <input type="range" id="incelikSec" min="0.8" max="1.6" step="0.05">
+    <label for="hizSec">Konuşma hızı <span id="hizDeger"></span></label>
+    <input type="range" id="hizSec" min="0.7" max="1.3" step="0.05">
     <label class="onay"><input type="checkbox" id="webSec"> Güncel sorularda web araması yapsın (her arama ek ücretli)</label>
     <label class="onay"><input type="checkbox" id="aiBilgiSec"> Saatin bilgisini yapay zeka her seferinde yeniden yazsın</label>
     <label for="kanalGirdi">Siri kanalı (Firuze kestirmesindeki topic ile aynı)</label>
@@ -465,7 +474,7 @@ body.tamEkran #tarih{padding-left:140px;}
   };
   /* ============================================================== */
 
-  var SURUM = '1 Kasım 12:20';   // Ayarlar penceresinin altında görünür
+  var SURUM = '1 Kasım 13:05';   // Ayarlar penceresinin altında görünür
   var API_URL = 'https://api.anthropic.com/v1/messages';
   var AYLAR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
   var GUNLER = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
@@ -480,7 +489,8 @@ body.tamEkran #tarih{padding-left:140px;}
 
   var havaOzet = '', dersOzet = '';   // Firuze'ye her soruda verilen güncel panel verileri
   function kucuk(t) { try { return t.toLocaleLowerCase('tr-TR'); } catch (e) { return t.toLowerCase(); } }
-  var ayar = { anahtar: oku('anahtar', ''), model: oku('model', CONFIG.varsayilanModel), web: oku('web', false), aiBilgi: oku('aiBilgi', true), kanal: oku('kanal', '') };
+  var ayar = { anahtar: oku('anahtar', ''), model: oku('model', CONFIG.varsayilanModel), web: oku('web', false), aiBilgi: oku('aiBilgi', true), kanal: oku('kanal', ''),
+    sesAdi: oku('sesAdi', ''), sesIncelik: oku('sesIncelik', 1.1), sesHiz: oku('sesHiz', 0.95) };
 
   /* ---------------- Ses (alarm bip + konuşma) ---------------- */
   function wavUret(sure, ornek) {
@@ -530,24 +540,51 @@ body.tamEkran #tarih{padding-left:140px;}
   document.addEventListener('touchend', sesKilidiAc, false);
   document.addEventListener('click', sesKilidiAc, false);
 
-  function trSesi() {
-    if (!window.speechSynthesis) return null;
-    var v = speechSynthesis.getVoices();
-    for (var i = 0; i < v.length; i++) if (v[i].lang === 'tr-TR' || v[i].lang.indexOf('tr') === 0) return v[i];
-    return null;
+  function trSesleri() {
+    if (!window.speechSynthesis) return [];
+    return speechSynthesis.getVoices().filter(function (v) { return v.lang && v.lang.toLowerCase().indexOf('tr') === 0; });
+  }
+  function gelismisMi(v) { return /premium|enhanced|geli[sş]mi[sş]/i.test((v.voiceURI || '') + ' ' + (v.name || '')); }
+  function trSesi(adi) {
+    var v = trSesleri(), i, istenen = adi === undefined ? ayar.sesAdi : adi;
+    if (istenen) for (i = 0; i < v.length; i++) if (v[i].voiceURI === istenen) return v[i];
+    for (i = 0; i < v.length; i++) if (gelismisMi(v[i])) return v[i];
+    return v[0] || null;
   }
   // Metni okur; bitince (ya da okunamazsa tahmini süre sonunda) bitince() çağrılır
-  function konus(metin, bitince) {
+  // Sesli okumadan önce metni sadeleştir: simge, parantez ve aralıkları konuşulur hâle getir
+  function sesliMetin(t) {
+    return t.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+      .replace(/(\d+)\s*°\s*C?/g, '$1 derece')
+      .replace(/%\s*(\d+)/g, 'yüzde $1')
+      .replace(/(\d+)\s*[-–]\s*(\d+)/g, '$1 ile $2')
+      .replace(/[()\[\]"“”*_#]/g, '')
+      .replace(/\s+/g, ' ').trim();
+  }
+  // Cümle cümle bölmek araya boşluk ve tonlama kırılması sokuyordu; kısa cevaplar tek parça okunur
+  function parcala(t) {
+    if (t.length <= 350) return [t];
+    var cumleler = t.match(/[^.!?…]+[.!?…]*/g) || [t], sonuc = [], cur = '';
+    cumleler.forEach(function (c) {
+      if (cur && (cur + c).length > 300) { sonuc.push(cur.trim()); cur = c; } else cur += c;
+    });
+    if (cur.trim()) sonuc.push(cur.trim());
+    return sonuc;
+  }
+  // deneme: Ayarlar'daki kaydedilmemiş değerlerle dinlemek için { sesAdi, incelik, hiz }
+  function konus(metin, bitince, deneme) {
     var bittiMi = false, basladi = false, yoklama = null, emniyet = null;
     function bitti() { if (bittiMi) return; bittiMi = true; clearInterval(yoklama); clearTimeout(emniyet); if (bitince) bitince(); }
     emniyet = setTimeout(bitti, 4000 + metin.length * 95);
     if (!window.speechSynthesis) return;
     speechSynthesis.cancel();
-    var parcalar = (metin.match(/[^.!?…]+[.!?…]*/g) || [metin]).filter(function (p) { return p.trim(); });
-    var kalan = parcalar.length, ses = trSesi();
+    var parcalar = parcala(sesliMetin(metin)).filter(function (p) { return p.trim(); });
+    var d = deneme || { sesAdi: ayar.sesAdi, incelik: ayar.sesIncelik, hiz: ayar.sesHiz };
+    var kalan = parcalar.length, ses = trSesi(d.sesAdi);
     parcalar.forEach(function (p) {
       var u = new SpeechSynthesisUtterance(p.trim());
-      u.lang = 'tr-TR'; if (ses) u.voice = ses; u.rate = 1;
+      u.lang = 'tr-TR'; if (ses) u.voice = ses;
+      u.rate = d.hiz; u.pitch = d.incelik;
       u.onend = u.onerror = function () { kalan--; if (kalan <= 0) bitti(); };
       speechSynthesis.speak(u);
     });
@@ -960,7 +997,7 @@ body.tamEkran #tarih{padding-left:140px;}
   function sistemMetni() {
     var s = new Date();
     return 'Sen ' + CONFIG.asistanAdi + ' adlı, sıcakkanlı ve meraklı bir sesli asistansın; kullanıcının masasındaki bir iPad\'de turkuaz robot yüzlü bir saat olarak yaşıyorsun. ' +
-      'Cevapların yüksek sesle okunacak. Türkçe cevap ver. Varsayılan olarak 2-4 kısa, net cümle kullan; kullanıcı ayrıntı isterse uzat. ' +
+      'Cevapların yüksek sesle okunacak; samimi, sıcak ve tatlı bir dille, bir arkadaş gibi konuş. Türkçe cevap ver. Varsayılan olarak 2-4 kısa, net cümle kullan; kullanıcı ayrıntı isterse uzat. ' +
       'Markdown, madde işareti, başlık, tablo veya emoji kullanma; sayıları ve birimleri sesli okunacak gibi yaz. ' +
       'Kullanıcı havacılık ve uzay mühendisliği öğrencisi; teknik sorularda doğru ve öz ol. ' +
       (ayar.web ? 'Güncel bilgi gerektiren sorularda web aramasını kullan. ' : 'Güncel olaylar hakkında emin değilsen bunu söyle. ') +
@@ -1116,6 +1153,8 @@ body.tamEkran #tarih{padding-left:140px;}
     $('ayarNot').textContent = not || '';
     $('anahtarGirdi').value = ayar.anahtar;
     $('modelSec').value = ayar.model;
+    sesListesiCiz();
+    $('incelikSec').value = ayar.sesIncelik; $('hizSec').value = ayar.sesHiz; kaydiriciYaz();
     $('webSec').checked = !!ayar.web;
     $('aiBilgiSec').checked = !!ayar.aiBilgi;
     $('kanalGirdi').value = ayar.kanal;
@@ -1172,6 +1211,29 @@ body.tamEkran #tarih{padding-left:140px;}
     return t;
   }
 
+  /* ---------------- Ses ayarları ---------------- */
+  function sesListesiCiz() {
+    var sec = $('sesSec'), sesler = trSesleri(), gelismisVar = false;
+    sec.innerHTML = '';
+    var o = document.createElement('option'); o.value = ''; o.textContent = 'Otomatik (en iyi Türkçe ses)'; sec.appendChild(o);
+    sesler.forEach(function (v) {
+      var g = gelismisMi(v); if (g) gelismisVar = true;
+      var op = document.createElement('option'); op.value = v.voiceURI; op.textContent = v.name + (g && !/geli[sş]mi[sş]|enhanced|premium/i.test(v.name) ? ' · Gelişmiş' : ''); sec.appendChild(op);
+    });
+    sec.value = ayar.sesAdi;
+    if (sec.value !== ayar.sesAdi) sec.value = '';
+    $('sesNot').textContent = gelismisVar
+      ? 'Gelişmiş Türkçe ses yüklü.'
+      : 'Daha doğal ses için iPad Ayarlar > Genel > Erişilebilirlik > Konuşma > Sesler > Türkçe bölümünden "Yelda (Gelişmiş)" sesini indir, sonra bu pencereyi kapatıp yeniden aç.';
+  }
+  function kaydiriciYaz() {
+    $('incelikDeger').textContent = '· ' + Number($('incelikSec').value).toFixed(2);
+    $('hizDeger').textContent = '· ' + Number($('hizSec').value).toFixed(2);
+  }
+  if (window.speechSynthesis && 'onvoiceschanged' in speechSynthesis) {
+    speechSynthesis.onvoiceschanged = function () { if ($('ayarPencere').className.indexOf('acik') >= 0) sesListesiCiz(); };
+  }
+
   /* ---------------- Gece modu ---------------- */
   var uyanikBitis = 0;
   function geceKontrol() {
@@ -1206,7 +1268,9 @@ body.tamEkran #tarih{padding-left:140px;}
       ayar.aiBilgi = $('aiBilgiSec').checked;
       var eskiKanal = ayar.kanal;
       ayar.kanal = $('kanalGirdi').value.trim();
+      ayar.sesAdi = $('sesSec').value; ayar.sesIncelik = Number($('incelikSec').value); ayar.sesHiz = Number($('hizSec').value);
       yaz('anahtar', ayar.anahtar); yaz('model', ayar.model); yaz('web', ayar.web); yaz('aiBilgi', ayar.aiBilgi); yaz('kanal', ayar.kanal);
+      yaz('sesAdi', ayar.sesAdi); yaz('sesIncelik', ayar.sesIncelik); yaz('sesHiz', ayar.sesHiz);
       pencereKapat('ayarPencere');
       if (eskiAi !== ayar.aiBilgi || (ayar.aiBilgi && !oku('bilgi', null))) bilgiGuncelle();
       if (eskiKanal !== ayar.kanal) { kanalSonId = null; kanalBaslangic = Math.floor(Date.now() / 1000); kanalYokla(); }
@@ -1220,8 +1284,12 @@ body.tamEkran #tarih{padding-left:140px;}
     });
     $('sesTestBtn').addEventListener('click', function () {
       yuzDurum('konusuyor');
-      konus('Merhaba, ben ' + CONFIG.asistanAdi + '. Sesim böyle duyuluyor.', function () { if (yuzHal === 'konusuyor') yuzDurum('mutlu'); });
+      konus('Merhaba, ben ' + CONFIG.asistanAdi + '. Sesim böyle duyuluyor, beğendin mi?', function () { if (yuzHal === 'konusuyor') yuzDurum('mutlu'); },
+        { sesAdi: $('sesSec').value, incelik: Number($('incelikSec').value), hiz: Number($('hizSec').value) });
     });
+    $('incelikSec').addEventListener('input', kaydiriciYaz);
+    $('hizSec').addEventListener('input', kaydiriciYaz);
+    $('sesSec').addEventListener('change', function () { $('sesTestBtn').click(); });
 
     $('alarmBtn').addEventListener('click', function () {
       $('alarmGirdi').value = alarm.saat;
@@ -1315,6 +1383,14 @@ body.tamEkran #tarih{padding-left:140px;}
   $('sorBtnYazi').textContent = CONFIG.soruDugmesi;
   $('surumYazi').textContent = 'Panel sürümü: ' + SURUM;
   bagla();
+  // Adres ?kanal=... ile açıldıysa Siri kanalını kaydet (uzun adı iPad'de elle yazmamak için)
+  (function () {
+    var m = /[?&]kanal=([a-z0-9-]{8,64})/i.exec(location.search);
+    if (!m) return;
+    ayar.kanal = m[1]; yaz('kanal', ayar.kanal);
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    setTimeout(function () { altyaziGoster('Siri kanalı kaydedildi: ' + ayar.kanal, '', 'Ayarlar'); }, 600);
+  })();
   boyutAyarla();
   alarmKartCiz();
   hatirlaticiCiz();
