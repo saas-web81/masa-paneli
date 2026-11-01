@@ -212,6 +212,9 @@ input[type=text],input[type=password],input[type=time],select{font:inherit;font-
 #hatirlaticiRozet{font-size:12px;font-weight:500;color:var(--tq);margin-left:8px;}
 .hatirlaticiSatir{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--cizgi);font-size:15px;color:var(--yazi);}
 .hatirlaticiSatir button{min-height:40px;font-size:14px;padding:0 12px;margin-left:10px;}
+/* Tam ekranda Safari'nin sol üst düğmeleri ve durum çubuğu için yer aç */
+body.tamEkran #app{padding-top:26px;}
+body.tamEkran #tarih{padding-left:140px;}
 /* Soru yazarken yüz sağda görünür kalsın */
 #sorPencere{background:rgba(0,10,9,.5);}
 @media (orientation:landscape){ #sorPencere .kutu{left:3%;-webkit-transform:none;transform:none;width:62%;} }
@@ -470,6 +473,8 @@ input[type=text],input[type=password],input[type=time],select{font:inherit;font-
   function hataYaz(m) { var h = $('hataKutusu'); h.textContent = m; setTimeout(function () { if (h.textContent === m) h.textContent = ''; }, 60000); }
   window.onerror = function (msg) { hataYaz('Hata: ' + msg); };
 
+  var havaOzet = '', dersOzet = '';   // Firuze'ye her soruda verilen güncel panel verileri
+  function kucuk(t) { try { return t.toLocaleLowerCase('tr-TR'); } catch (e) { return t.toLowerCase(); } }
   var ayar = { anahtar: oku('anahtar', ''), model: oku('model', CONFIG.varsayilanModel), web: oku('web', false), aiBilgi: oku('aiBilgi', true), kanal: oku('kanal', '') };
 
   /* ---------------- Ses (alarm bip + konuşma) ---------------- */
@@ -717,6 +722,17 @@ input[type=text],input[type=password],input[type=time],select{font:inherit;font-
       parca.push(h.time[j].slice(11, 13) + ' ' + havaBilgi(h.weather_code[j], h.is_day[j] === 1).ikon + Math.round(h.temperature_2m[j]) + '°');
     }
     $('saatlik').textContent = parca.join('   ');
+    // Firuze'nin hava sorularında kullanacağı özet
+    var ozet = [CONFIG.sehir + ' şu an ' + Math.round(c.temperature_2m) + ' derece, ' + kucuk(b.ad) + ', hissedilen ' + Math.round(c.apparent_temperature) + ', rüzgâr saatte ' + Math.round(c.wind_speed_10m) + ' km',
+      'bugün en yüksek ' + Math.round(g.temperature_2m_max[0]) + ', en düşük ' + Math.round(g.temperature_2m_min[0]) + ', yağış olasılığı yüzde ' + (yagis == null ? 0 : yagis)];
+    if (g.temperature_2m_max.length > 1) ozet.push('yarın en yüksek ' + Math.round(g.temperature_2m_max[1]) + ', en düşük ' + Math.round(g.temperature_2m_min[1]) + ', yağış olasılığı yüzde ' + (g.precipitation_probability_max[1] == null ? 0 : g.precipitation_probability_max[1]));
+    var saatler = [];
+    for (var k2 = 1; k2 <= 6; k2++) {
+      var j2 = i + 2 * k2; if (j2 >= h.time.length) break;
+      saatler.push(h.time[j2].slice(11, 16) + ' ' + Math.round(h.temperature_2m[j2]) + ' derece ' + kucuk(havaBilgi(h.weather_code[j2], true).ad) + ' yağış yüzde ' + (h.precipitation_probability[j2] == null ? 0 : h.precipitation_probability[j2]));
+    }
+    if (saatler.length) ozet.push('sonraki saatler: ' + saatler.join(', '));
+    havaOzet = ozet.join('; ') + ' (veri saati ' + pad(s.getHours()) + ':' + pad(s.getMinutes()) + ')';
   }
 
   /* ---------------- Sıradaki ders ---------------- */
@@ -746,12 +762,14 @@ input[type=text],input[type=password],input[type=time],select{font:inherit;font-
       $('dersAna').innerHTML = '';
       $('dersAna').appendChild(document.createTextNode(a.d.kod + ' · bitişe '));
       var sp = document.createElement('span'); sp.textContent = sureYaz(a.kalan); $('dersAna').appendChild(sp);
+      dersOzet = 'şu an ' + a.d.kod + ' ' + a.d.ad + ' dersinde, salon ' + a.d.salon + ', bitiş ' + a.d.bit + '; sonraki ders ' + n.kod + ' ' + n.ad + ', ' + kucuk(gunEtiketi(n.gun, s, enYakin)) + ' ' + n.bas;
       $('dersAlt').textContent = a.d.ad + ' · ' + nb(a.d.salon) + (suan.length > 1 ? ' · aynı saatte ' + suan.slice(1).map(function (x) { return x.d.kod; }).join(', ') : '');
     } else {
       $('dersEtiket').textContent = 'Sıradaki ders';
       $('dersAna').innerHTML = '';
       $('dersAna').appendChild(document.createTextNode(n.kod + ' · ' + gunEtiketi(n.gun, s, enYakin) + ' ' + n.bas + ' · '));
       var sp2 = document.createElement('span'); sp2.textContent = kalanYaz(enYakin); $('dersAna').appendChild(sp2);
+      dersOzet = n.kod + ' ' + n.ad + ', ' + kucuk(gunEtiketi(n.gun, s, enYakin)) + ' ' + n.bas + ', salon ' + n.salon + ' (' + kalanYaz(enYakin) + ')';
       $('dersAlt').textContent = n.ad + ' · ' + nb(n.salon) + (sonraki.length > 1 ? ' · aynı saatte ' + sonraki.slice(1).map(function (x) { return x.kod + ' (' + nb(x.salon) + ')'; }).join(', ') : '');
     }
   }
@@ -943,6 +961,8 @@ input[type=text],input[type=password],input[type=time],select{font:inherit;font-
       (ayar.web ? 'Güncel bilgi gerektiren sorularda web aramasını kullan. ' : 'Güncel olaylar hakkında emin değilsen bunu söyle. ') +
       'iPad\'in ön kamerasına erişimin var: kullanıcı elindekini, önündekini ya da bir şeyi göstermek istediğinde veya görmeni gerektiren bir soru sorduğunda kameraya_bak aracını kullan. Mesajda görüntü zaten varsa aracı yeniden çağırma. Kamera kullanıcıya bakar ve düşük çözünürlüklüdür; emin olamazsan bunu söyle. ' +
       'Kullanıcı ileri bir zamanda hatırlatma ya da bir şey yapmanı isterse hatirlatici_kur aracını kullan; yarın, akşam, iki saat sonra gibi ifadeleri şu anki zamana göre yerel tarih ve saate çevir, saat belirsizse makul bir saat seç ve cevabında söyle. Hatırlatıcıları sorarsa hatirlaticilari_listele, iptal etmek isterse hatirlatici_sil kullan. Bir araç kullandıktan sonra ne yaptığını tek kısa cümleyle söyle. ' +
+      (havaOzet ? 'Panelin az önce aldığı hava verisi; hava sorularını buna göre cevapla, gerçek zamanlı bilgin olmadığını söyleme: ' + havaOzet + '. ' : '') +
+      (dersOzet ? 'Kullanıcının ders programından sıradaki ders: ' + dersOzet + '. ' : '') +
       'Şu an (yerel saat): ' + s.getFullYear() + '-' + pad(s.getMonth() + 1) + '-' + pad(s.getDate()) + 'T' + pad(s.getHours()) + ':' + pad(s.getMinutes()) +
       ', ' + s.getDate() + ' ' + AYLAR[s.getMonth()] + ' ' + GUNLER[s.getDay()] + '. Konum: ' + CONFIG.sehir + ', Türkiye.';
   }
@@ -1261,7 +1281,27 @@ input[type=text],input[type=password],input[type=time],select{font:inherit;font-
       if (Date.now() - sonHava > 15 * 60 * 1000) havaGetir();
       kanalYokla();
     });
-    window.addEventListener('resize', function () { seritYaz($('seritMetin').textContent); });
+    window.addEventListener('resize', function () { boyutAyarla(); seritYaz($('seritMetin').textContent); });
+    window.addEventListener('orientationchange', function () { setTimeout(boyutAyarla, 400); });
+    document.addEventListener('webkitfullscreenchange', function () { setTimeout(boyutAyarla, 300); setTimeout(boyutAyarla, 1200); });
+    document.addEventListener('fullscreenchange', function () { setTimeout(boyutAyarla, 300); });
+    document.addEventListener('focusout', function () { setTimeout(boyutAyarla, 350); });
+    setInterval(boyutAyarla, 3000);
+  }
+
+  // iOS 12 Safari tam ekrana geçince ya da klavye kapanınca düzeni eski yükseklikte bırakabiliyor:
+  // panel yüksekliğini her seferinde ekranın gerçek yüksekliğine eşitle
+  function boyutAyarla() {
+    var tam = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    document.body.classList.toggle('tamEkran', tam);
+    var h = window.innerHeight;
+    if (tam && window.screen) {
+      var yatay = Math.abs(window.orientation || 0) === 90 || window.innerWidth > window.innerHeight;
+      h = Math.max(h, yatay ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height));
+    }
+    var app = $('app');
+    if (app.style.height !== h + 'px') { app.style.bottom = 'auto'; app.style.height = h + 'px'; }
+    if (window.pageYOffset) window.scrollTo(0, 0);
   }
 
   /* ---------------- Başlat ---------------- */
@@ -1269,6 +1309,7 @@ input[type=text],input[type=password],input[type=time],select{font:inherit;font-
   $('sorBaslik').textContent = CONFIG.asistanAdi;
   $('sorBtnYazi').textContent = CONFIG.soruDugmesi;
   bagla();
+  boyutAyarla();
   alarmKartCiz();
   hatirlaticiCiz();
   sayacCiz();
